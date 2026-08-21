@@ -79,7 +79,13 @@ jobs:
             git clone --recursive --branch $branch $repo $name --depth=1
             echo "$(pwd)/$name/" >> $GITHUB_PATH
             echo "$(pwd)/$name/bin" >> $GITHUB_PATH
-            find "$(pwd)/$name" -mindepth 1 -maxdepth 3 -type d -name bin -print >> $GITHUB_PATH
+            clang_bin=$(find "$(pwd)/$name" -mindepth 2 -maxdepth 4 -type f -path "*/clang-r383902*/bin/clang" | sort | tail -n 1)
+            if [ -z "$clang_bin" ]; then
+              clang_bin=$(find "$(pwd)/$name" -mindepth 2 -maxdepth 4 -type f -path "*/bin/clang" | sort | tail -n 1)
+            fi
+            if [ -n "$clang_bin" ]; then
+              echo "$(dirname "$clang_bin")" >> $GITHUB_PATH
+            fi
           done
 
           echo "PATH Variable: $PATH"
