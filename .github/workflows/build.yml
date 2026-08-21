@@ -194,6 +194,7 @@ jobs:
           path: |
             ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
             ./${{ env.kernelDir }}/config-validation.json
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
 
