@@ -9,6 +9,10 @@ on:
   push:
     branches:
       - a32x-workflow-build
+  pull_request:
+    branches:
+      - main
+
 jobs:
   Set-repos:
     name: "🐂 Parse repos.json"
