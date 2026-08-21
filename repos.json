@@ -6,7 +6,7 @@
       "branch": "A326BXXU1AUA5",
       "device": "a32x"
     },
-    "withKernelSU": false,
+    "withKernelSU": true,
     "toolchains": [
       {
         "repo": "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86",
