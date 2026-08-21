@@ -9,10 +9,6 @@ on:
   push:
     branches:
       - a32x-workflow-build
-  pull_request:
-    branches:
-      - main
-
 jobs:
   Set-repos:
     name: "🐂 Parse repos.json"
@@ -52,6 +48,9 @@ jobs:
 
       withKernelSU: ${{ matrix.repos.withKernelSU }}
     steps:
+      - name: "😄 Checkout builder configuration"
+        uses: actions/checkout@v4
+
       - name: "✨ Create working dir"
         run: mkdir -p $kernelDir
 
@@ -164,17 +163,36 @@ jobs:
           echo "PATH Variable: $PATH"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-      - name: "🏴‍☠️ Before Action "
+      - name: "🏴‍☠️ Enable and verify full NetHunter configuration"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
         env:
-            args: ${{ steps.generate-args.outputs.args }}
-        working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
+          args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "args ---> ${args}"
-          echo "current path ---> $(pwd)"
-          echo "CONFIG_OF_CONFIGFS=y" >> .config
-          echo "CONFIG_OF_OVERLAY=y" >> .config
-          cat .config
-          
+          config_path="$GITHUB_WORKSPACE/${kernelDir}/${OUT_DIR}/.config"
+          required="$GITHUB_WORKSPACE/configs/a32x-nethunter-full.config"
+          report="$GITHUB_WORKSPACE/${kernelDir}/config-validation.json"
+
+          ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" \
+            "$config_path" "$required"
+          make ${args} olddefconfig
+
+          python3 "$GITHUB_WORKSPACE/scripts/validate_kernel_config.py" \
+            --config "$config_path" \
+            --required "$required" \
+            --source-root . \
+            --json-output "$report"
+
+      - name: "📋 Upload resolved configuration evidence"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Config(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: |
+            ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
+            ./${{ env.kernelDir }}/config-validation.json
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: "🎶 Build kernel"
         working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
         env:
@@ -195,7 +213,7 @@ jobs:
         with:
           name: Image(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
           path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
       - name: "💙 Upload Image.gz"
@@ -203,7 +221,7 @@ jobs:
         with:
           name: Image.gz(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
           path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
       - name: "💜 Upload dtb"
