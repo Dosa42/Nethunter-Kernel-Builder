@@ -1,9 +1,10 @@
-[  {
+[
+  {
     "kernelSource": {
-      "name": "MikasaNethunter",
-      "repo": "https://github.com/noophyy/mikasa_kernel_realme2_c1.git",
-      "branch": "Light",
-      "device": "mikasa"
+      "name": "SamsungA325GNetHunter",
+      "repo": "https://github.com",
+      "branch": "master",
+      "device": "a32x"
     },
     "withKernelSU": false,
     "toolchains": [
