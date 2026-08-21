@@ -68,6 +68,13 @@ jobs:
         run: |
           git clone --recursive --branch $kernelBranch $kernelRepo $kernelName --depth=1
 
+      - name: "📡 Add MT7612U / ALFA AWUS036ACM driver and firmware"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/install_mt76x2u_backport.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/mt7612u-backport.json"
+
       - name: "💫 Get toolchains"
         working-directory: ./${{ env.kernelDir }}
         env:
@@ -194,6 +201,7 @@ jobs:
           path: |
             ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
             ./${{ env.kernelDir }}/config-validation.json
+            ./${{ env.kernelDir }}/mt7612u-backport.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
@@ -205,6 +213,27 @@ jobs:
         run: |
           echo "PATH Variable: $PATH"
           make ${args}
+
+      - name: "📡 Verify built-in MT7612U driver and embedded firmware"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/verify_mt76x2u_build.py" \
+            --source-root . \
+            --config "${OUT_DIR}/.config" \
+            --out-dir "${OUT_DIR}" \
+            --image "${OUT_DIR}/arch/${ARCH}/boot/Image" \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/mt7612u-build-evidence.json"
+
+      - name: "📡 Upload MT7612U build evidence"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: MT7612U(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: |
+            ./${{ env.kernelDir }}/mt7612u-backport.json
+            ./${{ env.kernelDir }}/mt7612u-build-evidence.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: "🏴‍☠️ Post Action "
         run: |
