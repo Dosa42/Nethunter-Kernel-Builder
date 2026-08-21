@@ -26,7 +26,7 @@
       "CROSS_COMPILE_COMPAT": "",
       "CLANG_TRIPLE": "aarch64-linux-gnu-",
       "AR": "",
-      "CC": "../clang/clang-r383902/bin/clang"
+      "CC": "clang"
     },
     "extraParams": {
       "ANDROID_MAJOR_VERSION": "r",
