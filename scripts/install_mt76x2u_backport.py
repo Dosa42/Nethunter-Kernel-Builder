@@ -47,6 +47,27 @@ def append_once(path: Path, addition: str) -> None:
     path.write_text(text.rstrip() + "\n" + addition, encoding="utf-8")
 
 
+def replace_once(path: Path, old: str, new: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return
+    if text.count(old) != 1:
+        raise RuntimeError(f"expected one compatibility patch target in {path}")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def apply_kernel_4_14_compatibility(driver_root: Path) -> None:
+    # struct_size() was added after this Samsung 4.14 tree. Keep the exact
+    # overflow-equivalent allocation used by Linux v4.19 without relying on
+    # that newer helper macro.
+    replace_once(
+        driver_root / "agg-rx.c",
+        "tid = kzalloc(struct_size(tid, reorder_buf, size), GFP_KERNEL);",
+        "tid = kzalloc(sizeof(*tid) + size * sizeof(tid->reorder_buf[0]), "
+        "GFP_KERNEL);",
+    )
+
+
 def download(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "Nethunter-Kernel-Builder"})
     with urllib.request.urlopen(request, timeout=120) as response:
@@ -95,6 +116,8 @@ def main() -> int:
             checkout / "drivers/net/wireless/mediatek/mt76",
             destination,
         )
+
+    apply_kernel_4_14_compatibility(destination)
 
     insert_before(
         mediatek_root / "Kconfig",
@@ -145,6 +168,9 @@ def main() -> int:
             "CONFIG_MT76_USB=y",
             "CONFIG_MT76x2_COMMON=y",
             "CONFIG_MT76x2U=y",
+        ],
+        "kernel_4_14_compatibility": [
+            "replace post-4.14 struct_size() use in agg-rx.c",
         ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
