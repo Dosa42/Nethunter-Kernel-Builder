@@ -6,7 +6,7 @@
       "branch": "master",
       "device": "a32x"
     },
-    "withKernelSU": false,
+    "withKernelSU": true,
     "toolchains": [
       {
         "repo": "https://android.googlesource.com/platform/prebuilts/gas/linux-x86",
