@@ -215,10 +215,10 @@ jobs:
           make ${args}
 
       - name: "📡 Verify built-in MT7612U driver and embedded firmware"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        working-directory: ./${{ env.kernelDir }}
         run: |
           python3 "$GITHUB_WORKSPACE/scripts/verify_mt76x2u_build.py" \
-            --source-root . \
+            --source-root "${kernelName}" \
             --config "${OUT_DIR}/.config" \
             --out-dir "${OUT_DIR}" \
             --image "${OUT_DIR}/arch/${ARCH}/boot/Image" \
