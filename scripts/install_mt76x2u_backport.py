@@ -67,6 +67,20 @@ def apply_kernel_4_14_compatibility(driver_root: Path) -> None:
         "GFP_KERNEL);",
     )
 
+    # sg_init_marker() was introduced after this Samsung 4.14 tree. Its v4.19
+    # implementation only marks the last scatterlist entry, and sg_mark_end()
+    # is already available in 4.14, so use that exact equivalent directly.
+    replace_once(
+        driver_root / "usb.c",
+        "sg_init_marker(urb->sg, urb->num_sgs);",
+        "sg_mark_end(&urb->sg[urb->num_sgs - 1]);",
+    )
+    replace_once(
+        driver_root / "usb.c",
+        "sg_init_marker(urb->sg, nsgs);",
+        "sg_mark_end(&urb->sg[nsgs - 1]);",
+    )
+
 
 def download(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "Nethunter-Kernel-Builder"})
@@ -171,6 +185,7 @@ def main() -> int:
         ],
         "kernel_4_14_compatibility": [
             "replace post-4.14 struct_size() use in agg-rx.c",
+            "replace post-4.14 sg_init_marker() uses in usb.c",
         ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
