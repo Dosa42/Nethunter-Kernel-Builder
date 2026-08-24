@@ -75,6 +75,13 @@ jobs:
             --source-root . \
             --json-output "$GITHUB_WORKSPACE/${kernelDir}/mt7612u-backport.json"
 
+      - name: "🔓 Force persistent SELinux permissive mode"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/force_selinux_permissive.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/selinux-permissive-patch.json"
+
       - name: "💫 Get toolchains"
         working-directory: ./${{ env.kernelDir }}
         env:
@@ -202,6 +209,7 @@ jobs:
             ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
             ./${{ env.kernelDir }}/config-validation.json
             ./${{ env.kernelDir }}/mt7612u-backport.json
+            ./${{ env.kernelDir }}/selinux-permissive-patch.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
@@ -214,6 +222,16 @@ jobs:
           echo "PATH Variable: $PATH"
           make ${args}
 
+      - name: "🔓 Verify forced persistent SELinux permissive mode"
+        working-directory: ./${{ env.kernelDir }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/verify_selinux_permissive_build.py" \
+            --source-root "${kernelName}" \
+            --config "${OUT_DIR}/.config" \
+            --image "${OUT_DIR}/arch/${ARCH}/boot/Image" \
+            --patch-manifest "$GITHUB_WORKSPACE/${kernelDir}/selinux-permissive-patch.json" \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/selinux-permissive-build-evidence.json"
+
       - name: "📡 Verify built-in MT7612U driver and embedded firmware"
         working-directory: ./${{ env.kernelDir }}
         run: |
@@ -223,6 +241,17 @@ jobs:
             --out-dir "${OUT_DIR}" \
             --image "${OUT_DIR}/arch/${ARCH}/boot/Image" \
             --json-output "$GITHUB_WORKSPACE/${kernelDir}/mt7612u-build-evidence.json"
+
+      - name: "🔓 Upload SELinux permissive build evidence"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SELinux-Permissive(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: |
+            ./${{ env.kernelDir }}/selinux-permissive-patch.json
+            ./${{ env.kernelDir }}/selinux-permissive-build-evidence.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: "📡 Upload MT7612U build evidence"
         if: ${{ always() }}
