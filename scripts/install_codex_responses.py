@@ -85,6 +85,15 @@ def source_root_from_argv() -> Path:
     return Path.cwd().resolve()
 
 
+def patch_codex_oauth_sock_header(source_root: Path) -> None:
+    oauth = source_root / "drivers/misc/codex_responses/codex_oauth.c"
+    text = oauth.read_text(encoding="utf-8")
+    header = "#include <net/sock.h>\n"
+    if header not in text:
+        oauth.write_text(header + text, encoding="utf-8")
+        print(f"patched Linux 4.14 struct sock definition: {oauth}")
+
+
 def main() -> int:
     repo = Path(__file__).resolve().parent.parent
     payload = repo / "codex" / "kernel"
@@ -107,9 +116,13 @@ def main() -> int:
     if completed.returncode != 0:
         return completed.returncode
 
-    compat = source_root_from_argv() / "drivers/misc/codex_responses/bearssl/compat/stdint.h"
+    source_root = source_root_from_argv()
+
+    compat = source_root / "drivers/misc/codex_responses/bearssl/compat/stdint.h"
     compat.write_text(STDINT_COMPAT, encoding="utf-8")
     print(f"patched BearSSL stdint compatibility: {compat}")
+
+    patch_codex_oauth_sock_header(source_root)
     return 0
 
 
