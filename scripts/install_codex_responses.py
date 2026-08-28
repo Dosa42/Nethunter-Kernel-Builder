@@ -9,6 +9,81 @@ import sys
 
 EXPECTED_SHA256 = "9a622ac7e343e19fbff1ea6567823845be17be6a30cf0d3a0de9d17afe48a303"
 
+STDINT_COMPAT = r'''#ifndef CODEX_BEARSSL_STDINT_H
+#define CODEX_BEARSSL_STDINT_H
+#include <linux/types.h>
+#ifndef INT8_MIN
+#define INT8_MIN (-128)
+#endif
+#ifndef INT8_MAX
+#define INT8_MAX 127
+#endif
+#ifndef UINT8_MAX
+#define UINT8_MAX 255U
+#endif
+#ifndef INT16_MIN
+#define INT16_MIN (-32767 - 1)
+#endif
+#ifndef INT16_MAX
+#define INT16_MAX 32767
+#endif
+#ifndef UINT16_MAX
+#define UINT16_MAX 65535U
+#endif
+#ifndef INT32_MIN
+#define INT32_MIN (-2147483647 - 1)
+#endif
+#ifndef INT32_MAX
+#define INT32_MAX 2147483647
+#endif
+#ifndef UINT32_MAX
+#define UINT32_MAX 4294967295U
+#endif
+#ifndef INT64_MIN
+#define INT64_MIN (-9223372036854775807LL - 1)
+#endif
+#ifndef INT64_MAX
+#define INT64_MAX 9223372036854775807LL
+#endif
+#ifndef UINT64_MAX
+#define UINT64_MAX 18446744073709551615ULL
+#endif
+#ifndef INT8_C
+#define INT8_C(x) x
+#endif
+#ifndef UINT8_C
+#define UINT8_C(x) x##U
+#endif
+#ifndef INT16_C
+#define INT16_C(x) x
+#endif
+#ifndef UINT16_C
+#define UINT16_C(x) x##U
+#endif
+#ifndef INT32_C
+#define INT32_C(x) x
+#endif
+#ifndef UINT32_C
+#define UINT32_C(x) x##U
+#endif
+#ifndef INT64_C
+#define INT64_C(x) x##LL
+#endif
+#ifndef UINT64_C
+#define UINT64_C(x) x##ULL
+#endif
+#endif
+'''
+
+
+def source_root_from_argv() -> Path:
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--source-root" and i + 1 < len(sys.argv):
+            return Path(sys.argv[i + 1]).resolve()
+        if arg.startswith("--source-root="):
+            return Path(arg.split("=", 1)[1]).resolve()
+    return Path.cwd().resolve()
+
 
 def main() -> int:
     repo = Path(__file__).resolve().parent.parent
@@ -29,7 +104,13 @@ def main() -> int:
 
     impl = Path(__file__).resolve().with_name("install_codex_responses_impl.py")
     completed = subprocess.run([sys.executable, str(impl), *sys.argv[1:]])
-    return completed.returncode
+    if completed.returncode != 0:
+        return completed.returncode
+
+    compat = source_root_from_argv() / "drivers/misc/codex_responses/bearssl/compat/stdint.h"
+    compat.write_text(STDINT_COMPAT, encoding="utf-8")
+    print(f"patched BearSSL stdint compatibility: {compat}")
+    return 0
 
 
 if __name__ == "__main__":
