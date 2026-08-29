@@ -199,6 +199,15 @@ def main() -> None:
                     "that is absent from indexed MT6853 and Samsung A32 GPL trees."
                 ),
             },
+            {
+                "symbol": "CONFIG_MTK_HIFIXDSP_SUPPORT",
+                "expected_path": "drivers/misc/mediatek/hifi_dsp/mt6853",
+                "reason": (
+                    "The HIFI DSP wrapper requires an MT6853 platform subtree "
+                    "that is absent from checked Samsung, Xiaomi, Oppo, Realme, "
+                    "and Motorola MT6853 GPL trees."
+                ),
+            },
         ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
