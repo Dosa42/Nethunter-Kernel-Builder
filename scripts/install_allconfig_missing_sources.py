@@ -169,6 +169,14 @@ def main() -> None:
                     "that is absent from indexed MT6853 GPL releases."
                 ),
             },
+            {
+                "symbol": "CONFIG_MTK_EMI",
+                "expected_path": "drivers/misc/mediatek/emi/mt6853",
+                "reason": (
+                    "The EMI wrapper requires an MT6853 platform subtree that "
+                    "is absent from indexed MT6853 and Samsung A32 GPL trees."
+                ),
+            },
         ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
