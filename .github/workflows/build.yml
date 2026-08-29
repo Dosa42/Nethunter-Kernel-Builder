@@ -81,6 +81,13 @@ jobs:
             --source-root . \
             --payload-root "$GITHUB_WORKSPACE/codex/kernel"
 
+      - name: Install published GPL source required by all-config expansion
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/install_allconfig_missing_sources.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/allconfig-source-manifest.json"
+
       - name: Get toolchains
         working-directory: ./${{ env.kernelDir }}
         env:
@@ -173,6 +180,13 @@ jobs:
           ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" "$config_path" "$required"
           make ${args} olddefconfig
 
+          # One requested symbol has no published implementation. Keep it in
+          # the request ledger, disable only that unbuildable reference, and
+          # never hide it behind an empty Makefile or fake driver object.
+          unavailable="$GITHUB_WORKSPACE/configs/a32x-allconfig-unavailable-source.config"
+          ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" "$config_path" "$unavailable"
+          make ${args} olddefconfig
+
           python3 "$GITHUB_WORKSPACE/scripts/enable_all_kconfig.py" \
             --config "$config_path" --requested "$all_requested" --json-output "$all_report"
 
@@ -193,6 +207,8 @@ jobs:
             ./${{ env.kernelDir }}/all-configs-requested.txt
             ./${{ env.kernelDir }}/all-configs-enable.config
             ./${{ env.kernelDir }}/all-configs-enable-report.json
+            ./${{ env.kernelDir }}/allconfig-source-manifest.json
+            ./configs/a32x-allconfig-unavailable-source.config
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
