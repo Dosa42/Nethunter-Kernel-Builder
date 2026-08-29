@@ -189,6 +189,33 @@ def prepare_bearssl(dst: Path, ca_bundle: Path) -> None:
         (bear / "UPSTREAM_COMMIT").write_text(BEARSSL_COMMIT + "\n", encoding="utf-8")
         patch_bearssl_config(bear / "src" / "config.h")
         make_compat_headers(bear / "compat")
+        (bear / "src" / "rand" / "sysrng_kernel.c").write_text(r'''/*
+ * BearSSL system seeder for the in-kernel Codex transport.
+ * Uses the Linux kernel CSPRNG; no userspace device or syscall dependency.
+ */
+#include <linux/random.h>
+#include <linux/string.h>
+#include "bearssl_rand.h"
+
+static int
+seeder_kernel_random(const br_prng_class **ctx)
+{
+    unsigned char seed[32];
+
+    get_random_bytes(seed, sizeof(seed));
+    (*ctx)->update(ctx, seed, sizeof(seed));
+    memzero_explicit(seed, sizeof(seed));
+    return 1;
+}
+
+br_prng_seeder
+br_prng_seeder_system(const char **name)
+{
+    if (name != NULL)
+        *name = "linux-kernel-get_random_bytes";
+    return &seeder_kernel_random;
+}
+''', encoding="utf-8")
         generate_bearssl_makefile(bear)
 
         trust = dst / "codex_trust_anchors.h"
