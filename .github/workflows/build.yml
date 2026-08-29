@@ -167,6 +167,12 @@ jobs:
                 --config "$config_path" --fragment "$all_fragment"
             fi
           done
+          # Restore the protected Android/NetHunter/Codex selections after
+          # all-yes choice expansion. This keeps SELinux as Android's default
+          # security module and preserves Kali's manual SDR frontend policy.
+          ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" "$config_path" "$required"
+          make ${args} olddefconfig
+
           python3 "$GITHUB_WORKSPACE/scripts/enable_all_kconfig.py" \
             --config "$config_path" --requested "$all_requested" --json-output "$all_report"
 
