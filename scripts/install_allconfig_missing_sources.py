@@ -191,6 +191,14 @@ def main() -> None:
                     "is absent from indexed MT6853 and Samsung A32 GPL trees."
                 ),
             },
+            {
+                "symbol": "CONFIG_MTK_EMI_MPU",
+                "expected_path": "drivers/misc/mediatek/emi_mpu/mt6853",
+                "reason": (
+                    "The EMI MPU wrapper requires an MT6853 platform subtree "
+                    "that is absent from indexed MT6853 and Samsung A32 GPL trees."
+                ),
+            },
         ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
