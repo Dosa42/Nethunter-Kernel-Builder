@@ -208,6 +208,19 @@ def main() -> None:
                     "and Motorola MT6853 GPL trees."
                 ),
             },
+            {
+                "symbol": "CONFIG_MTK_LCM",
+                "expected_path": (
+                    "drivers/misc/mediatek/lcm/"
+                    "ili9882n_hdp_dsi_vdo_ilitek_lm36274"
+                ),
+                "reason": (
+                    "Samsung's native A32x defconfig disables the legacy MTK_LCM "
+                    "wrapper and enables SMCDSD_PANEL_A32X. Enabling the legacy "
+                    "wrapper expands a stale panel list containing an unpublished "
+                    "ili9882n subtree."
+                ),
+            },
         ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
