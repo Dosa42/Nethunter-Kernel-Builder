@@ -1,39 +1,37 @@
 [
   {
     "kernelSource": {
-      "name": "SamsungA325GNetHunter",
-      "repo": "https://github.com",
-      "branch": "master",
+      "name": "SamsungA326BNetHunter",
+      "repo": "https://github.com/ASKSAP/android_kernel_samsung_a32x.git",
+      "branch": "A326BXXU1AUA5",
       "device": "a32x"
     },
     "withKernelSU": true,
     "toolchains": [
       {
-        "repo": "https://android.googlesource.com/platform/prebuilts/gas/linux-x86",
-        "branch": "master",
-        "name": "gas"
+        "repo": "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86",
+        "branch": "android-r-beta-2",
+        "name": "clang"
       },
       {
-        "repo": "https://github.com/kdrag0n/proton-clang.git",
-        "branch": "master",
-        "name": "clang"
+        "repo": "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9",
+        "branch": "android-11.0.0_r1",
+        "name": "gcc64"
       }
     ],
     "params": {
       "ARCH": "arm64",
-      "CROSS_COMPILE": "aarch64-linux-gnu-",
-      "CROSS_COMPILE_ARM32": "arm-linux-gnueabi-",
-      "CROSS_COMPILE_COMPAT": "arm-linux-gnueabi-",
+      "CROSS_COMPILE": "../gcc64/bin/aarch64-linux-android-",
+      "CROSS_COMPILE_ARM32": "",
+      "CROSS_COMPILE_COMPAT": "",
       "CLANG_TRIPLE": "aarch64-linux-gnu-",
-      "AR": "llvm-ar",
-      "OBJDUMP": "llvm-objdump",
-      "STRIP": "llvm-strip",
-      "OBJCOPY": "llvm-objcopy",
-      "NM": "llvm-nm",
+      "AR": "",
       "CC": "clang"
     },
     "extraParams": {
-      "KEEP": ""
+      "ANDROID_MAJOR_VERSION": "r",
+      "KCFLAGS": "-w",
+      "CONFIG_SECTION_MISMATCH_WARN_ONLY": "y"
     }
   }
 ]

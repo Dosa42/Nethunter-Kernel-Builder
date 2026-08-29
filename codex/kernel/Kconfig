@@ -1,0 +1,4 @@
+config CODEX_RESPONSES
+    bool "Codex Responses device capability bridge"
+    depends on MTK_FLASHLIGHT_MT6360
+    default y

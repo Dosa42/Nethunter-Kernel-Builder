@@ -1,0 +1,105 @@
+name: "Export full patched A32x source"
+
+on:
+  push:
+    branches:
+      - a32x-workflow-build
+  workflow_dispatch:
+
+jobs:
+  export-source:
+    name: "Export complete patched A32x kernel source"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout builder integration
+        uses: actions/checkout@v4
+
+      - name: Install source preparation prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc curl git jq python3 libssl-dev libfl-dev zstd xz-utils
+
+      - name: Clone exact A32 kernel source revision
+        run: |
+          git clone --recursive https://github.com/ASKSAP/android_kernel_samsung_a32x.git kernel-source
+          cd kernel-source
+          git checkout 864116299011ccf9f2f1fa88e3906788c10efe4d
+          test "$(git rev-parse HEAD)" = "864116299011ccf9f2f1fa88e3906788c10efe4d"
+
+      - name: Apply MT7612U backport and firmware
+        working-directory: ./kernel-source
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/install_mt76x2u_backport.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/mt7612u-backport.json"
+
+      - name: Apply forced persistent SELinux permissive patch
+        working-directory: ./kernel-source
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/force_selinux_permissive.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/selinux-permissive-patch.json"
+
+      - name: Inject Codex Responses kernel capability bridge
+        working-directory: ./kernel-source
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/install_codex_responses.py" \
+            --source-root . \
+            --payload-root "$GITHUB_WORKSPACE/codex/kernel"
+
+      - name: Add KernelSU v0.9.5
+        working-directory: ./kernel-source
+        run: |
+          rm -rf ./KernelSU ./drivers/kernelsu
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+          printf '\nCONFIG_KPROBES=y\nCONFIG_HAVE_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\n' >> ./arch/arm64/configs/a32x_defconfig
+
+      - name: Resolve exact full-open build configuration
+        working-directory: ./kernel-source
+        run: |
+          mkdir -p out
+          make ARCH=arm64 O=out a32x_defconfig
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config "$GITHUB_WORKSPACE/configs/a32x-nethunter-full.config"
+          make ARCH=arm64 O=out olddefconfig
+          grep -qx 'CONFIG_CODEX_RESPONSES=y' out/.config
+          cp out/.config ./A32X_CODEX_FULL_RESOLVED_CONFIG
+
+      - name: Create source provenance manifest
+        run: |
+          cat > FULL_SOURCE_MANIFEST.txt <<'EOF'
+          Samsung A32x complete patched kernel source export
+          Upstream repository: ASKSAP/android_kernel_samsung_a32x
+          Upstream commit: 864116299011ccf9f2f1fa88e3906788c10efe4d
+          Builder repository: Dosa42/Nethunter-Kernel-Builder
+          Builder branch: a32x-workflow-build
+          Includes: full upstream kernel source, KernelSU v0.9.5 source integration, MT7612U/mt76x2u backport and embedded firmware, forced persistent SELinux permissive source patches, Codex Responses kernel bridge, and resolved full NetHunter/Codex configuration.
+          EOF
+          printf 'Builder commit: %s\n' "$GITHUB_SHA" >> FULL_SOURCE_MANIFEST.txt
+
+      - name: Package complete patched source tree
+        run: |
+          rm -rf kernel-source/.git kernel-source/out
+          mkdir -p source-export/build-integration
+          mv kernel-source source-export/kernel-source
+          cp -a codex source-export/build-integration/
+          cp -a configs source-export/build-integration/
+          cp -a scripts source-export/build-integration/
+          cp repos.json source-export/build-integration/
+          cp .github/workflows/build.yml source-export/build-integration/build.yml
+          cp FULL_SOURCE_MANIFEST.txt source-export/
+          cp mt7612u-backport.json source-export/
+          cp selinux-permissive-patch.json source-export/
+          tar -I 'zstd -19 -T0' -cf a32x-codex-full-patched-source.tar.zst source-export
+          sha256sum a32x-codex-full-patched-source.tar.zst > a32x-codex-full-patched-source.tar.zst.sha256
+          du -sh source-export a32x-codex-full-patched-source.tar.zst
+
+      - name: Upload complete patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: A32x-Codex-Complete-Patched-Source
+          path: |
+            a32x-codex-full-patched-source.tar.zst
+            a32x-codex-full-patched-source.tar.zst.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
