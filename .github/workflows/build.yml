@@ -149,6 +149,27 @@ jobs:
           report="$GITHUB_WORKSPACE/${kernelDir}/config-validation.json"
           ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" "$config_path" "$required"
           make ${args} olddefconfig
+
+          # The owner requires every disabled symbol from the resolved A32x
+          # configuration to be requested as built-in, not only the curated
+          # NetHunter fragment. Re-apply after Kconfig dependency resolution
+          # so every satisfiable dependency chain reaches a fixed point.
+          all_fragment="$GITHUB_WORKSPACE/${kernelDir}/all-configs-enable.config"
+          all_requested="$GITHUB_WORKSPACE/${kernelDir}/all-configs-requested.txt"
+          all_report="$GITHUB_WORKSPACE/${kernelDir}/all-configs-enable-report.json"
+          python3 "$GITHUB_WORKSPACE/scripts/enable_all_kconfig.py" \
+            --config "$config_path" --fragment "$all_fragment" --requested "$all_requested"
+          for pass in 1 2 3 4; do
+            ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" "$config_path" "$all_fragment"
+            make ${args} olddefconfig
+            if [ "$pass" -lt 4 ]; then
+              python3 "$GITHUB_WORKSPACE/scripts/enable_all_kconfig.py" \
+                --config "$config_path" --fragment "$all_fragment"
+            fi
+          done
+          python3 "$GITHUB_WORKSPACE/scripts/enable_all_kconfig.py" \
+            --config "$config_path" --requested "$all_requested" --json-output "$all_report"
+
           python3 "$GITHUB_WORKSPACE/scripts/validate_kernel_config.py" \
             --config "$config_path" --required "$required" --source-root . --json-output "$report"
           grep -qx 'CONFIG_CODEX_RESPONSES=y' "$config_path"
@@ -163,6 +184,9 @@ jobs:
             ./${{ env.kernelDir }}/config-validation.json
             ./${{ env.kernelDir }}/mt7612u-backport.json
             ./${{ env.kernelDir }}/selinux-permissive-patch.json
+            ./${{ env.kernelDir }}/all-configs-requested.txt
+            ./${{ env.kernelDir }}/all-configs-enable.config
+            ./${{ env.kernelDir }}/all-configs-enable-report.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
