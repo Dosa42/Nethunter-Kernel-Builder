@@ -25,6 +25,16 @@ SOURCES = [
         "path": "sound/soc/mediatek/mt6873",
     },
     {
+        "repository": "XayahSuSuSu/kernel_redmi_mt6885",
+        "commit": "007562b79057594114cf432bb7b7b21b22710436",
+        "path": "sound/soc/mediatek/mt6885",
+    },
+    {
+        "repository": "XayahSuSuSu/kernel_redmi_mt6885",
+        "commit": "007562b79057594114cf432bb7b7b21b22710436",
+        "path": "drivers/misc/mediatek/adsp/mt6885",
+    },
+    {
         "repository": "OnePlusOSS/android_kernel_oneplus_mt6893",
         "commit": "48f1797695e24d46986a7c87dd91dd21cbf8c342",
         "path": "drivers/input/touchscreen/mediatek/focaltech_touch",
@@ -128,6 +138,14 @@ def main() -> None:
                 "reason": (
                     "The published driver wrapper selects a platform directory, "
                     "but no MT6853 implementation is present in indexed GPL trees."
+                ),
+            },
+            {
+                "symbol": "CONFIG_MTK_PMIC_CHIP_MT6355",
+                "expected_path": "drivers/misc/mediatek/accdet/mt6355",
+                "reason": (
+                    "The vendor Kbuild references this PMIC accdet subtree, "
+                    "but no implementation is present in indexed MTK GPL trees."
                 ),
             },
         ],
