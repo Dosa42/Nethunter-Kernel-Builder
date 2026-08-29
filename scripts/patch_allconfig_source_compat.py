@@ -122,6 +122,31 @@ ORE_RAID_REPLACEMENT = """\t/*
 LINUXINCLUDE_ANCHOR = "\t\t-I$(srctree)/drivers/misc/mediatek/include \\\n"
 MTPROF_INCLUDE = "\t\t-I$(srctree)/drivers/misc/mediatek/mtprof \\\n"
 
+EXOFS_SUPER_START = "\tstruct __alloc_ore_devs_and_exofs_devs {\n"
+EXOFS_SUPER_END = "\n\treturn 0;\n}\n\nstatic int exofs_read_lookup_dev_table"
+
+EXOFS_SUPER_REPLACEMENT = """\t/* Twice bigger table: See exofs_init_comps() and comment at
+\t * exofs_read_lookup_dev_table().
+\t */
+\tconst size_t numores = numdevs * 2 - 1;
+\tconst size_t ored_bytes = numores * sizeof(struct ore_dev *);
+\tconst size_t ed_bytes = numdevs * sizeof(struct exofs_dev);
+\tstruct exofs_dev *eds;
+\tunsigned i;
+
+\tsbi->oc.ods = kzalloc(ored_bytes + ed_bytes, GFP_KERNEL);
+\tif (unlikely(!sbi->oc.ods)) {
+\t\tEXOFS_ERR("ERROR: failed allocating Device array[%d]\\n",
+\t\t\t  numdevs);
+\t\treturn -ENOMEM;
+\t}
+
+\t/* The exofs_dev array follows the ore_dev pointer array. */
+\t*peds = eds = (struct exofs_dev *)(sbi->oc.ods + numores);
+\tfor (i = 0; i < numdevs; ++i)
+\t\tsbi->oc.ods[i] = &eds[i].ored;
+"""
+
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -182,6 +207,26 @@ def main() -> None:
         "before_sha256": sha256(before),
         "after_sha256": sha256(after),
         "feature_preserved": "CONFIG_EXOFS_FS",
+    })
+
+    target = args.source_root / "fs/exofs/super.c"
+    before = target.read_bytes()
+    patched = replace_anchored(before.decode(), EXOFS_SUPER_START,
+                               EXOFS_SUPER_END, EXOFS_SUPER_REPLACEMENT,
+                               "EXOFS device table allocator")
+    if "struct __alloc_ore_devs_and_exofs_devs" in patched:
+        raise SystemExit("GCC-only EXOFS device allocation structure remains")
+    if "sbi->oc.ods + numores" not in patched:
+        raise SystemExit("EXOFS device table runtime allocation replacement is incomplete")
+    after = patched.encode()
+    target.write_bytes(after)
+    patches.append({
+        "path": "fs/exofs/super.c",
+        "purpose": "replace GCC-only VLA device table with a contiguous runtime-sized allocation",
+        "before_sha256": sha256(before),
+        "after_sha256": sha256(after),
+        "feature_preserved": "CONFIG_EXOFS_FS",
+        "reference": "Linux v4.19 fs/exofs/super.c runtime allocation",
     })
 
     target = args.source_root / "Makefile"
