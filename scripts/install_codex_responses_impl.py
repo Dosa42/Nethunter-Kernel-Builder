@@ -215,6 +215,23 @@ def main() -> int:
             tf.extractall(payload_tmp)
         payload = payload_tmp
 
+    # Samsung A32x Linux 4.14 exposes init_cred as a pointer-valued
+    # expression.  override_creds() therefore takes init_cred directly;
+    # taking &init_cred is an invalid address-of-rvalue with this tree.
+    token_store = payload / "codex_token_store.c"
+    token_source = token_store.read_text(encoding="utf-8")
+    old_override = "override_creds(&init_cred)"
+    replacement_count = token_source.count(old_override)
+    if replacement_count != 4:
+        raise RuntimeError(
+            "expected 4 Linux 4.14 init_cred compatibility sites in "
+            f"{token_store}, found {replacement_count}"
+        )
+    token_store.write_text(
+        token_source.replace(old_override, "override_creds(init_cred)"),
+        encoding="utf-8",
+    )
+
     dst = src / "drivers/misc/codex_responses"
     dst.mkdir(parents=True, exist_ok=True)
     names = (
