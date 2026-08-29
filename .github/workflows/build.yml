@@ -87,6 +87,9 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/install_allconfig_missing_sources.py" \
             --source-root . \
             --json-output "$GITHUB_WORKSPACE/${kernelDir}/allconfig-source-manifest.json"
+          python3 "$GITHUB_WORKSPACE/scripts/patch_allconfig_source_compat.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/allconfig-source-compat.json"
 
       - name: Get toolchains
         working-directory: ./${{ env.kernelDir }}
@@ -208,6 +211,7 @@ jobs:
             ./${{ env.kernelDir }}/all-configs-enable.config
             ./${{ env.kernelDir }}/all-configs-enable-report.json
             ./${{ env.kernelDir }}/allconfig-source-manifest.json
+            ./${{ env.kernelDir }}/allconfig-source-compat.json
             ./configs/a32x-allconfig-unavailable-source.config
           include-hidden-files: true
           if-no-files-found: warn
