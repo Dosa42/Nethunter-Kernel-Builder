@@ -39,6 +39,11 @@ SOURCES = [
         "commit": "48f1797695e24d46986a7c87dd91dd21cbf8c342",
         "path": "drivers/input/touchscreen/mediatek/focaltech_touch",
     },
+    {
+        "repository": "xiaomi-mt6853-devs/android_kernel_xiaomi_cannon",
+        "commit": "61923102fe542f96a4a993b78760c975c0b7508f",
+        "path": "sound/soc/mediatek/scp_vow/mt6853",
+    },
 ]
 USER_AGENT = "A32x-Nethunter-Kernel-Builder"
 
@@ -146,6 +151,22 @@ def main() -> None:
                 "reason": (
                     "The vendor Kbuild references this PMIC accdet subtree, "
                     "but no implementation is present in indexed MTK GPL trees."
+                ),
+            },
+            {
+                "symbol": "CONFIG_SND_SOC_MTK_SCP_SMARTPA",
+                "expected_path": "sound/soc/mediatek/scp_spk/mt6853",
+                "reason": (
+                    "The smart-PA wrapper requires an MT6853 platform subtree "
+                    "that is absent from indexed MT6853 GPL releases."
+                ),
+            },
+            {
+                "symbol": "CONFIG_MTK_LASTBUS_INTERFACE",
+                "expected_path": "drivers/misc/mediatek/debug_latch/lastbus/mt6853",
+                "reason": (
+                    "The lastbus wrapper requires an MT6853 platform subtree "
+                    "that is absent from indexed MT6853 GPL releases."
                 ),
             },
         ],
