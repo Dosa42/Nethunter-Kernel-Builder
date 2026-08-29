@@ -20,6 +20,11 @@ SOURCES = [
         "path": "sound/soc/mediatek/mt6785",
     },
     {
+        "repository": "XayahSuSuSu/kernel_redmi_mt6885",
+        "commit": "007562b79057594114cf432bb7b7b21b22710436",
+        "path": "sound/soc/mediatek/mt6873",
+    },
+    {
         "repository": "OnePlusOSS/android_kernel_oneplus_mt6893",
         "commit": "48f1797695e24d46986a7c87dd91dd21cbf8c342",
         "path": "drivers/input/touchscreen/mediatek/focaltech_touch",
@@ -108,14 +113,24 @@ def main() -> None:
         "installed_file_count": sum(
             len(source["installed"]) for source in source_results
         ),
-        "unavailable_source_symbols": [{
-            "symbol": "CONFIG_TOUCHSCREEN_MTK_SOLOMON",
-            "expected_path": "drivers/input/touchscreen/mediatek/SOLOMON",
-            "reason": (
-                "MediaTek Kconfig/Makefile references the directory, but the "
-                "implementation is absent from published MT6853/MTK 4.14 GPL trees."
-            ),
-        }],
+        "unavailable_source_symbols": [
+            {
+                "symbol": "CONFIG_TOUCHSCREEN_MTK_SOLOMON",
+                "expected_path": "drivers/input/touchscreen/mediatek/SOLOMON",
+                "reason": (
+                    "MediaTek Kconfig/Makefile references the directory, but the "
+                    "implementation is absent from published MT6853/MTK 4.14 GPL trees."
+                ),
+            },
+            {
+                "symbol": "CONFIG_TOUCHSCREEN_MTK_GSLX680",
+                "expected_path": "drivers/input/touchscreen/mediatek/gslX680/mt6853",
+                "reason": (
+                    "The published driver wrapper selects a platform directory, "
+                    "but no MT6853 implementation is present in indexed GPL trees."
+                ),
+            },
+        ],
     }
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(manifest, indent=2) + "\n")
