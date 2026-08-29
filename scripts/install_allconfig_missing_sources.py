@@ -4,8 +4,10 @@
 import argparse
 import hashlib
 import json
+import time
 from pathlib import Path
 from urllib.parse import quote
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 SOURCES = [
@@ -54,8 +56,20 @@ def request_bytes(url: str) -> bytes:
         "User-Agent": USER_AGENT,
         "X-GitHub-Api-Version": "2022-11-28",
     })
-    with urlopen(request, timeout=60) as response:
-        return response.read()
+    last_error = None
+    for attempt in range(5):
+        try:
+            with urlopen(request, timeout=60) as response:
+                return response.read()
+        except (ConnectionResetError, HTTPError, URLError) as error:
+            last_error = error
+            if isinstance(error, HTTPError) and error.code not in (429, 500, 502, 503, 504):
+                raise
+            if attempt < 4:
+                delay = 2 ** attempt
+                print(f"download retry {attempt + 1}/4 in {delay}s: {url}: {error}")
+                time.sleep(delay)
+    raise SystemExit(f"download failed after retries: {url}: {last_error}")
 
 
 def git_blob_sha(data: bytes) -> str:
