@@ -5,27 +5,88 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-UPSTREAM_REPOSITORY = "XayahSuSuSu/kernel_redmi_mt6885"
-UPSTREAM_COMMIT = "007562b79057594114cf432bb7b7b21b22710436"
-BASE_URL = (
-    "https://raw.githubusercontent.com/"
-    f"{UPSTREAM_REPOSITORY}/{UPSTREAM_COMMIT}/"
-)
-FILES = {
-    "sound/soc/mediatek/audio_dsp/mt6885/Makefile":
-        "7f91a3692223584384e0a4cf34f690527859a88c",
-    "sound/soc/mediatek/audio_dsp/mt6885/dsp-platform-mem-control.c":
-        "ddbd2675cf9bf326c22bd0225825f284b0d4a5d1",
-    "sound/soc/mediatek/audio_dsp/mt6885/dsp-platform-mem-control.h":
-        "eaddaab1123fffc6e3942af9e74bb523bc261493",
-}
+SOURCES = [
+    {
+        "repository": "XayahSuSuSu/kernel_redmi_mt6885",
+        "commit": "007562b79057594114cf432bb7b7b21b22710436",
+        "path": "sound/soc/mediatek/audio_dsp/mt6885",
+    },
+    {
+        "repository": "LineageOS/android_kernel_xiaomi_mt6785",
+        "commit": "a48fdea87dcfaab1d216c2fa99e49aa3722df2e9",
+        "path": "sound/soc/mediatek/mt6785",
+    },
+    {
+        "repository": "OnePlusOSS/android_kernel_oneplus_mt6893",
+        "commit": "48f1797695e24d46986a7c87dd91dd21cbf8c342",
+        "path": "drivers/input/touchscreen/mediatek/focaltech_touch",
+    },
+]
+USER_AGENT = "A32x-Nethunter-Kernel-Builder"
+
+
+def request_bytes(url: str) -> bytes:
+    request = Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": USER_AGENT,
+        "X-GitHub-Api-Version": "2022-11-28",
+    })
+    with urlopen(request, timeout=60) as response:
+        return response.read()
 
 
 def git_blob_sha(data: bytes) -> str:
     header = f"blob {len(data)}\0".encode()
     return hashlib.sha1(header + data).hexdigest()
+
+
+def install_directory(source_root: Path, source: dict) -> list:
+    repository = source["repository"]
+    commit = source["commit"]
+    root_path = source["path"]
+    installed = []
+    pending = [root_path]
+
+    while pending:
+        directory = pending.pop()
+        api_url = (
+            f"https://api.github.com/repos/{repository}/contents/"
+            f"{quote(directory, safe='/')}?ref={commit}"
+        )
+        entries = json.loads(request_bytes(api_url))
+        if not isinstance(entries, list):
+            raise SystemExit(f"expected directory listing from {api_url}")
+
+        for entry in entries:
+            if entry["type"] == "dir":
+                pending.append(entry["path"])
+                continue
+            if entry["type"] != "file":
+                raise SystemExit(
+                    f"unsupported {entry['type']} entry in pinned source: {entry['path']}"
+                )
+
+            data = request_bytes(entry["download_url"])
+            actual_sha = git_blob_sha(data)
+            if actual_sha != entry["sha"]:
+                raise SystemExit(
+                    f"integrity failure for {entry['path']}: "
+                    f"expected {entry['sha']}, got {actual_sha}"
+                )
+            target = source_root / entry["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            installed.append({
+                "path": entry["path"],
+                "bytes": len(data),
+                "git_blob_sha": actual_sha,
+                "url": entry["html_url"],
+            })
+
+    return sorted(installed, key=lambda item: item["path"])
 
 
 def main() -> None:
@@ -34,32 +95,19 @@ def main() -> None:
     parser.add_argument("--json-output", type=Path, required=True)
     args = parser.parse_args()
 
-    installed = []
-    for relative, expected_sha in FILES.items():
-        url = BASE_URL + relative
-        request = Request(url, headers={"User-Agent": "A32x-Nethunter-Kernel-Builder"})
-        with urlopen(request, timeout=60) as response:
-            data = response.read()
-        actual_sha = git_blob_sha(data)
-        if actual_sha != expected_sha:
-            raise SystemExit(
-                f"integrity failure for {relative}: expected {expected_sha}, got {actual_sha}"
-            )
-        target = args.source_root / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        installed.append({
-            "path": relative,
-            "bytes": len(data),
-            "git_blob_sha": actual_sha,
-            "url": url,
+    source_results = []
+    for source in SOURCES:
+        source_results.append({
+            **source,
+            "license_context": "published Linux kernel GPL source",
+            "installed": install_directory(args.source_root, source),
         })
 
     manifest = {
-        "upstream_repository": UPSTREAM_REPOSITORY,
-        "upstream_commit": UPSTREAM_COMMIT,
-        "license_context": "published Linux kernel GPL source",
-        "installed": installed,
+        "sources": source_results,
+        "installed_file_count": sum(
+            len(source["installed"]) for source in source_results
+        ),
         "unavailable_source_symbols": [{
             "symbol": "CONFIG_TOUCHSCREEN_MTK_SOLOMON",
             "expected_path": "drivers/input/touchscreen/mediatek/SOLOMON",
