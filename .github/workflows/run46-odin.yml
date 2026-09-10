@@ -1,0 +1,345 @@
+name: "Run 46 kernel rebuild and Odin input check"
+
+env:
+  CONFIGURATION: "repos.json"
+  OUT_DIR: "out"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/run46-odin
+    paths:
+      - .github/workflows/run46-odin.yml
+
+permissions:
+  contents: read
+
+jobs:
+  Set-repos:
+    name: "Parse repos.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      repos: ${{ steps.generate-matrix.outputs.repos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 7992c4e910c334d579866f7d9bf1c4388ea7476c
+          persist-credentials: false
+      - id: generate-matrix
+        run: |
+          echo "repos<<EOF" >> $GITHUB_OUTPUT
+          cat ${{ env.CONFIGURATION }} >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  Build-Kernel:
+    name: "Build A32x full-permissive Codex kernel"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    needs: [Set-repos]
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        repos: ${{ fromJSON(needs.Set-repos.outputs.repos) }}
+    env:
+      kernelDir: ${{ matrix.repos.kernelSource.name }}_${{ matrix.repos.kernelSource.device }}
+      kernelName: ${{ matrix.repos.kernelSource.name }}
+      kernelRepo: ${{ matrix.repos.kernelSource.repo }}
+      kernelBranch: ${{ matrix.repos.kernelSource.branch }}
+      kernelDevice: ${{ matrix.repos.kernelSource.device }}
+      DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.device }}_defconfig
+      withKernelSU: ${{ matrix.repos.withKernelSU }}
+    steps:
+      - name: Checkout builder configuration
+        uses: actions/checkout@v4
+        with:
+          ref: 7992c4e910c334d579866f7d9bf1c4388ea7476c
+          persist-credentials: false
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python3 libarchive-tools cpio xz-utils jq cmake
+
+      - name: Create working dir
+        run: mkdir -p "$kernelDir"
+
+      - name: Clone A32 kernel source
+        working-directory: ./${{ env.kernelDir }}
+        run: |
+          git clone --recursive --branch "$kernelBranch" "$kernelRepo" "$kernelName" --depth=1
+          git -C "$kernelName" checkout --detach 864116299011ccf9f2f1fa88e3906788c10efe4d
+          test "$(git -C "$kernelName" rev-parse HEAD)" = 864116299011ccf9f2f1fa88e3906788c10efe4d
+
+      - name: Add MT7612U / ALFA AWUS036ACM driver and firmware
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/install_mt76x2u_backport.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/mt7612u-backport.json"
+
+      - name: Force persistent SELinux permissive mode
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/force_selinux_permissive.py" \
+            --source-root . \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/selinux-permissive-patch.json"
+
+      - name: Inject Codex Responses kernel capability bridge
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/install_codex_responses.py" \
+            --source-root . \
+            --payload-root "$GITHUB_WORKSPACE/codex/kernel"
+
+      - name: Get toolchains
+        working-directory: ./${{ env.kernelDir }}
+        env:
+          toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
+        run: |
+          toolchains_num="$(echo "$toolchains" | jq 'length')"
+          for ((i=0;i<toolchains_num;i++)); do
+            name=$(echo "$toolchains" | jq -r ".[$i].name")
+            repo=$(echo "$toolchains" | jq -r ".[$i].repo")
+            branch=$(echo "$toolchains" | jq -r ".[$i].branch")
+            git clone --recursive --branch "$branch" "$repo" "$name" --depth=1
+            echo "$(pwd)/$name/" >> $GITHUB_PATH
+            echo "$(pwd)/$name/bin" >> $GITHUB_PATH
+            clang_bin=$(find "$(pwd)/$name" -mindepth 2 -maxdepth 4 -type f -path "*/clang-r383902*/bin/clang" | sort | tail -n 1)
+            if [ -z "$clang_bin" ]; then
+              clang_bin=$(find "$(pwd)/$name" -mindepth 2 -maxdepth 4 -type f -path "*/bin/clang" | sort | tail -n 1)
+            fi
+            if [ -n "$clang_bin" ]; then echo "$(dirname "$clang_bin")" >> $GITHUB_PATH; fi
+          done
+
+      - name: Set kernel build args
+        id: generate-args
+        working-directory: ./${{ env.kernelDir }}
+        env:
+          params: "${{ toJSON(matrix.repos.params) }}"
+          extraParams: "${{ toJSON(matrix.repos.extraParams) }}"
+        run: |
+          ARCH=$(echo "$params" | jq -r ".ARCH")
+          CROSS_COMPILE=$(echo "$params" | jq -r ".CROSS_COMPILE")
+          CROSS_COMPILE_COMPAT=$(echo "$params" | jq -r ".CROSS_COMPILE_COMPAT")
+          CLANG_TRIPLE=$(echo "$params" | jq -r ".CLANG_TRIPLE")
+          AR=$(echo "$params" | jq -r ".AR")
+          CC=$(echo "$params" | jq -r ".CC")
+          echo "ARCH=$ARCH" >> $GITHUB_ENV
+          args="-j$(nproc --all) O=$(pwd)/${OUT_DIR}"
+          [ -n "$ARCH" ] && args="$args ARCH=$ARCH"
+          [ -n "$CROSS_COMPILE" ] && args="$args CROSS_COMPILE=$CROSS_COMPILE"
+          [ -n "$CLANG_TRIPLE" ] && args="$args CLANG_TRIPLE=$CLANG_TRIPLE"
+          [ -n "$CROSS_COMPILE_COMPAT" ] && args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_COMPAT"
+          [ -n "$AR" ] && args="$args AR=$AR"
+          [ -n "$CC" ] && args="$args CC=$CC"
+          extra_params=$(echo "$extraParams" | jq -r 'to_entries[] | select(.value != "") | "\(.key)=\(.value)"' | tr '\n' ' ' | sed 's/ $//')
+          echo "args=$args $extra_params" >> $GITHUB_OUTPUT
+
+      - name: Add KernelSU v0.9.5
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        if: ${{ env.withKernelSU == 'true' }}
+        run: |
+          rm -rf ./KernelSU ./drivers/kernelsu
+          git clone --branch v0.9.5 https://github.com/tiann/KernelSU.git KernelSU
+          test "$(git -C KernelSU rev-parse HEAD)" = b766b98513b5a7eb33bc1c4a76b5702bf1288f07
+          ln -s ../KernelSU/kernel drivers/kernelsu
+          grep -q 'kernelsu' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          printf '\nCONFIG_KPROBES=y\nCONFIG_HAVE_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\n' >> ./arch/${ARCH}/configs/${DEFCONFIG_NAME}
+
+      - name: Make defconfig
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+        run: make ${args} ${DEFCONFIG_NAME}
+
+      - name: Enable and verify full open NetHunter configuration
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+        run: |
+          config_path="$GITHUB_WORKSPACE/${kernelDir}/${OUT_DIR}/.config"
+          required="$GITHUB_WORKSPACE/configs/a32x-nethunter-full.config"
+          report="$GITHUB_WORKSPACE/${kernelDir}/config-validation.json"
+          ./scripts/kconfig/merge_config.sh -m -O "$(dirname "$config_path")" "$config_path" "$required"
+          make ${args} olddefconfig
+          python3 "$GITHUB_WORKSPACE/scripts/validate_kernel_config.py" \
+            --config "$config_path" --required "$required" --source-root . --json-output "$report"
+          grep -qx 'CONFIG_CODEX_RESPONSES=y' "$config_path"
+
+      - name: Upload resolved configuration evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Config(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: |
+            ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
+            ./${{ env.kernelDir }}/config-validation.json
+            ./${{ env.kernelDir }}/mt7612u-backport.json
+            ./${{ env.kernelDir }}/selinux-permissive-patch.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Build kernel
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+        run: make ${args}
+
+      - name: Verify forced persistent SELinux permissive mode
+        working-directory: ./${{ env.kernelDir }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/verify_selinux_permissive_build.py" \
+            --source-root "${kernelName}" --config "${OUT_DIR}/.config" \
+            --image "${OUT_DIR}/arch/${ARCH}/boot/Image" \
+            --patch-manifest "$GITHUB_WORKSPACE/${kernelDir}/selinux-permissive-patch.json" \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/selinux-permissive-build-evidence.json"
+
+      - name: Verify MT7612U and Codex kernel bridge
+        working-directory: ./${{ env.kernelDir }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/verify_mt76x2u_build.py" \
+            --source-root "${kernelName}" --config "${OUT_DIR}/.config" --out-dir "${OUT_DIR}" \
+            --image "${OUT_DIR}/arch/${ARCH}/boot/Image" \
+            --json-output "$GITHUB_WORKSPACE/${kernelDir}/mt7612u-build-evidence.json"
+          grep -a -q 'codex_responses' "${OUT_DIR}/arch/${ARCH}/boot/Image"
+          grep -a -q 'codex_mt6360_set_torch' "${OUT_DIR}/arch/${ARCH}/boot/Image"
+
+      - name: Upload SELinux permissive evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SELinux-Permissive(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: |
+            ./${{ env.kernelDir }}/selinux-permissive-patch.json
+            ./${{ env.kernelDir }}/selinux-permissive-build-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload MT7612U evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: MT7612U(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: |
+            ./${{ env.kernelDir }}/mt7612u-backport.json
+            ./${{ env.kernelDir }}/mt7612u-build-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload Image.gz
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image.gz(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Validate and preserve rebuilt kernel and device trees
+        working-directory: ./${{ env.kernelDir }}
+        run: |
+          mkdir -p run46-output
+          cp "${OUT_DIR}/arch/arm64/boot/Image" run46-output/
+          cp "${OUT_DIR}/arch/arm64/boot/Image.gz" run46-output/
+          cp "${OUT_DIR}/.config" run46-output/kernel.config
+          cp "${OUT_DIR}/System.map" run46-output/
+          cp "${OUT_DIR}/Module.symvers" run46-output/
+          python3 - <<'PY'
+          import gzip, hashlib, json, os, pathlib, shutil
+          source = pathlib.Path(os.environ["kernelName"])
+          output = pathlib.Path("run46-output")
+          raw = (output / "Image").read_bytes()
+          compressed = (output / "Image.gz").read_bytes()
+          assert raw[56:60] == b"ARM\x64", "Not an ARM64 kernel Image"
+          assert gzip.decompress(compressed) == raw, "Image and Image.gz differ"
+          for pattern in ("*.dtb", "*.dtbo"):
+              for path in pathlib.Path(os.environ["OUT_DIR"]).rglob(pattern):
+                  dest = output / "device-trees" / path.relative_to(os.environ["OUT_DIR"])
+                  dest.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(path, dest)
+          boot_inputs = []
+          for root in (source, pathlib.Path(os.environ["GITHUB_WORKSPACE"]) / "configs"):
+              for path in root.rglob("*"):
+                  if ".git" in path.parts or not path.is_file():
+                      continue
+                  name = path.name.lower()
+                  if name in ("boot.img", "boardconfig.mk") or name.startswith("ramdisk."):
+                      boot_inputs.append(str(path))
+          manifest = {
+              "original_run": 33232425281,
+              "original_run_number": 46,
+              "builder_commit": "7992c4e910c334d579866f7d9bf1c4388ea7476c",
+              "kernel_commit": "864116299011ccf9f2f1fa88e3906788c10efe4d",
+              "kernelsu_commit": "b766b98513b5a7eb33bc1c4a76b5702bf1288f07",
+              "new_run": os.environ["GITHUB_RUN_ID"],
+              "rebuilt_image_sha256": hashlib.sha256(raw).hexdigest(),
+              "original_run46_image_sha256": "e7c7615978a164c2915d9b284629b8f8d0fb661769a947e89f34823a592729e5",
+              "byte_identical_to_original": hashlib.sha256(raw).hexdigest() == "e7c7615978a164c2915d9b284629b8f8d0fb661769a947e89f34823a592729e5",
+              "source_boot_candidates": boot_inputs,
+              "odin_package_created": False,
+              "odin_blocker": "The run46 sources do not supply a complete Android ramdisk and verified device boot-image packaging parameters. Raw Image and Image.gz are not Odin boot.img files.",
+              "scope": "Only run46 kernel sources and integrations; no donor boot image and no local PC or phone files.",
+          }
+          (output / "PROVENANCE.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+          (cd run46-output && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+
+      - name: Upload rebuilt run46 kernel inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: A32x-Run46-Rebuilt-Kernel-NOT-ODIN
+          path: ./${{ env.kernelDir }}/run46-output/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      - name: Export complete run46 patched source
+        run: |
+          mkdir -p run46-source-export
+          cp "${kernelDir}/run46-output/PROVENANCE.json" run46-source-export/
+          tar -I 'zstd -5 -T2' \
+            --exclude='.git' \
+            -cf run46-source-export/A32x-Run46-Patched-Source.tar.zst \
+            "${kernelDir}/${kernelName}" \
+            configs scripts codex repos.json .github/workflows/build.yml
+          (cd run46-source-export && sha256sum A32x-Run46-Patched-Source.tar.zst > A32x-Run46-Patched-Source.tar.zst.sha256)
+
+      - name: Upload complete run46 patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: A32x-Run46-Patched-Source
+          path: run46-source-export/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+  Odin-package:
+    name: "Odin packaging blocked - Android ramdisk missing from run46"
+    runs-on: ubuntu-24.04
+    needs: [Build-Kernel]
+    timeout-minutes: 5
+    steps:
+      - name: Explain missing Odin input
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          The run46 kernel rebuild passed its kernel checks and was uploaded with source and SHA-256 evidence.
+          **No Odin TAR or TAR.MD5 was created.**
+          The run46 source build supplies a raw kernel, not a complete Android boot image.
+          Completing Odin packaging requires a compatible Android ramdisk and verified boot-image parameters that run46 does not supply.
+          No boot-current.img, stock boot image, PC backup, or phone contents were used.
+          EOF
+          echo "::error::Odin packaging is blocked: run46 does not include the required Android ramdisk and complete boot-image inputs."
+          exit 1
